@@ -6,40 +6,40 @@ from datetime import datetime
 import pandas as pd
 import json
 
-# Configration Loader function
-def load_config(config_path="config.json"):
-    """
-    Load configuration from a JSON file.
+# # Configration Loader function
+# def load_config(config_path="config.json"):
+#     """
+#     Load configuration from a JSON file.
 
-    Args:
-        config_path (str): Path to the configuration JSON file.
+#     Args:
+#         config_path (str): Path to the configuration JSON file.
     
-    Returns:
-        dict: Dictionary containing the configuration.
-    """
-    try:
-        with open(config_path, "r") as file:
-            config = json.load(file)
-        return config
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Configuration file not found at {config_path}")
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON in the configuration file")
+#     Returns:
+#         dict: Dictionary containing the configuration.
+#     """
+#     try:
+#         with open(config_path, "r") as file:
+#             config = json.load(file)
+#         return config
+#     except FileNotFoundError:
+#         raise FileNotFoundError(f"Configuration file not found at {config_path}")
+#     except json.JSONDecodeError:
+#         raise ValueError("Invalid JSON in the configuration file")
 
-# Load configuration
-config = load_config("config.json")
+# # Load configuration
+# config = load_config("config.json")
 
 # Initialize Pinecone and Google Gemini with API keys
-pc = Pinecone(api_key=config["pinecone"]["api_key"])
+pc = Pinecone(api_key=st.secrets["pinecone"]["api_key"])
 index = pc.Index("intelligent-search-v2")
 
 # Set up OpenAI API key
-openai.api_key = config["openai"]["api_key"]
+openai.api_key = st.secrets["openai"]["api_key"]
 
 print("Setting up model configurations...")  # Debug print
 
 # Initialize SentenceTransformer model for query embedding
-model = SentenceTransformer(config["sentence_transformer"]["model"])
+model = SentenceTransformer(st.secrets["sentence_transformer"]["model"])
 
 # Streamlit UI setup
 st.title("Chatbot with Pinecone and GPT")
@@ -107,7 +107,7 @@ if query:
                             {"role": "user", "content": prompt}
                         ],
                         max_tokens=max_tokens,
-                        temperature=config["openai"]["temperature"]
+                        temperature=st.secrets["openai"]["temperature"]
                     )
                     response_text = gpt4_response['choices'][0]['message']['content']
                     gpt4_token_usage = gpt4_response['usage']['total_tokens']
@@ -133,7 +133,7 @@ if query:
                 sentiment_mapping = [":material/thumb_down:", ":material/thumb_up:"]
                 selected = st.feedback("thumbs")
                 if selected is not None:
-                    with open(config["feedback_log_file"], "a") as feedback_log:
+                    with open(st.secrets["feedback_log_file"], "a") as feedback_log:
                         feedback_log.write(f"{datetime.now()} | Query: {query} | Feedback: {selected} | Model used: {model_used}\n")
         else:
             st.write("No response generated.")
