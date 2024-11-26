@@ -1,5 +1,5 @@
 streamlit
 sentence-transformers
-openai
+openai==0.28
 pinecone-client
 pandas
