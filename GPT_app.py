@@ -34,7 +34,7 @@ pc = Pinecone(api_key=st.secrets["pinecone"]["api_key"])
 index = pc.Index("intelligent-search-v2")
 
 # Set up OpenAI API key
-openai.api_key = st.secrets["openai"]["api_key"]
+openai.api_key = st.secrets["openai_key"]
 
 print("Setting up model configurations...")  # Debug print
 
@@ -82,8 +82,8 @@ if query:
             print(f"- {text}")  # Debug print
    
         # Determine temperature and max_tokens based on query length or complexity
-        max_tokens = 200 if len(query) < 50 else 300  # More tokens for complex questions
-
+        # max_tokens = 200 if len(query) < 50 else 300  # More tokens for complex questions
+        max_tokens = 300
         # Refine prompt structure dynamically
         prompt = (
             f"Context: {' '.join(retrieved_texts)}\n\n"
@@ -107,11 +107,11 @@ if query:
                             {"role": "user", "content": prompt}
                         ],
                         max_tokens=max_tokens,
-                        temperature=st.secrets["openai"]["temperature"]
+                        temperature=st.secrets["temperature"]
                     )
                     response_text = gpt4_response['choices'][0]['message']['content']
                     gpt4_token_usage = gpt4_response['usage']['total_tokens']
-                    model_used = "GPT-4"  # Update model used
+                    model_used = "GPT-4o"  # Update model used
 
                     # Log token usage to file
                     with open("gpt_token_log.txt", "a") as log_file:
