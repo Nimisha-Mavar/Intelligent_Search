@@ -205,7 +205,7 @@ with col4:
 
 if st.session_state.submit_clicked:
         st.session_state.query = query_input
-        if st.session_state.query is not None:
+        if st.session_state.query is not None and st.session_state.query !="":
             if st.session_state.feedback is None:
                 query = st.session_state.query
                 print(f"Query: {query}")  # Debug print
