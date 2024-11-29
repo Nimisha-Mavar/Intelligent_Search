@@ -4,18 +4,11 @@ import openai
 from pinecone import Pinecone
 from datetime import datetime
 import pandas as pd
-import json
 
-# # Configration Loader function
+# ------------------- Utility Functions -------------------
 # def load_config(config_path="config.json"):
 #     """
 #     Load configuration from a JSON file.
-
-#     Args:
-#         config_path (str): Path to the configuration JSON file.
-    
-#     Returns:
-#         dict: Dictionary containing the configuration.
 #     """
 #     try:
 #         with open(config_path, "r") as file:
@@ -26,69 +19,84 @@ import json
 #     except json.JSONDecodeError:
 #         raise ValueError("Invalid JSON in the configuration file")
 
-# # Load configuration
-# config = load_config("config.json")
 
-# Initialize Pinecone and Google Gemini with API keys
-pc = Pinecone(api_key=st.secrets["pinecone"]["api_key"])
-index = pc.Index("intelligent-search-v2")
+def initialize_session_state():
+    """
+    Initialize Streamlit session state variables.
+    """
+    if "query" not in st.session_state:
+        st.session_state.query = None
+    if "response" not in st.session_state:
+        st.session_state.response = None
+    if "retrieved_texts" not in st.session_state:
+        st.session_state.retrieved_texts = None
+    if "retrieved_pdf_title" not in st.session_state:
+        st.session_state.retrieved_pdf_title = None
+    if "retrieved_pdf_page" not in st.session_state:
+        st.session_state.retrieved_pdf_page = None
+    if "retrieved_pdf_link" not in st.session_state:
+        st.session_state.retrieved_pdf_link = None
+    if "query_input" not in st.session_state:
+        st.session_state.query_input = None
+    if "feedback" not in st.session_state:
+        st.session_state.feedback = None  # Initialize feedback state with a default value
+    if "feedback_submitted" not in st.session_state:
+        st.session_state.feedback_submitted = False  # Track feedback submission status
 
-# Set up OpenAI API key
-openai.api_key = st.secrets["openai_key"]
 
-print("Setting up model configurations...")  # Debug print
+def clear_text_area():
+    """
+    Clear the text area and reset session state variables.
+    """
+    st.session_state.submit_clicked = False
+    st.session_state.query_input = None
+    st.session_state.query= None
+    st.session_state.response = None
+    st.session_state.retrieved_texts =None
+    st.session_state.feedback = None  # Reset feedback state
+    st.session_state.feedback_submitted = False
+    st.session_state.retrieved_pdf_title = None
+    st.session_state.retrieved_pdf_page = None
+    st.session_state.retrieved_pdf_link = None  # Reset feedback submission status
 
-# Initialize SentenceTransformer model for query embedding
-model = SentenceTransformer(st.secrets["sentence_transformer"]["model"])
+def submit_text():
+    st.session_state.submit_clicked = False
+    st.session_state.retrieved_pdf_title = None
+    st.session_state.retrieved_pdf_page = None
+    st.session_state.retrieved_pdf_link = None
+    st.session_state.response = None
+    st.session_state.retrieved_texts =None
+    st.session_state.feedback = None  # Reset feedback state
+    st.session_state.feedback_submitted = False
 
-# Streamlit UI setup
-st.title("Chatbot with Pinecone and GPT")
 
-# User input field for query
-query = st.text_input("Enter your query:")
+# ------------------- Core Logic Functions -------------------
 
-# Check if a query has been entered
-if query:
-    print(f"User query: {query}")  # Debug print
-    model_used = "None"  # Variable to track which model was used
-
-    # Generate embedding for the query using SentenceTransformer
-    embedding1 = model.encode(query)
-    print(f"Query embedding: {embedding1[:5]}... (truncated)")  # Debug print to show a sample of the embedding
-
-    # Perform a search in Pinecone using the query embedding
+def search_pinecone(index, embedding):
+    """
+    Perform a search in Pinecone using the query embedding.
+    """
     try:
-        answer = index.query(
-            namespace="",              # Search within the default namespace
-            vector=embedding1.tolist(),  # Convert embedding to a list format
-            top_k=5,                    # Retrieve the top 3 matches
-            include_metadata=True       # Include metadata for matched vectors
+        return index.query(
+            namespace="",             #Search within the default namespace
+            vector=embedding.tolist(),# Convert embedding to a list format
+            top_k=5,                  # Retrieve the top 5 matches
+            include_metadata=True     # Include metadata for matched vectors
         )
-        print(f"Pinecone query response: {answer}")  # Debug print
     except Exception as e:
         st.error(f"Error querying Pinecone: {e}")
-        print(f"Error querying Pinecone: {e}")  # Debug print
-        answer = {"matches": []}  # Default to an empty response on error
-
-    # Extract relevant texts from search results
-    retrieved_texts = [match['metadata']['text'] for match in answer['matches']]
-    retrieved_pdf_title = [match['metadata']['title'] for match in answer['matches']]
-    retrieved_pdf_page = [match['metadata']['page_number'] for match in answer['matches']]
-    retrieved_pdf_link = [match['metadata']['link'] for match in answer['matches']]
-
-    if retrieved_texts:
-        print("Retrieved texts from Pinecone:")  # Debug print
-        for text in retrieved_texts:
-            print(f"- {text}")  # Debug print
-   
-        # Determine temperature and max_tokens based on query length or complexity
-        # max_tokens = 200 if len(query) < 50 else 300  # More tokens for complex questions
-        max_tokens = 300
-        # Refine prompt structure dynamically
-        prompt = (
-            f"Context: {' '.join(retrieved_texts)}\n\n"
-            f"User Query: {query}\n\n"
-            "Task:\n"
+        print(f"Error querying Pinecone: {e}")
+        return {"matches": []}
+    
+def get_gpt4_response(retrieved_texts, query, max_tokens, temperature):
+    """
+    Get a response from GPT-4 based on the provided prompt.
+    """
+     # Refine prompt structure dynamically
+    prompt = (
+        f"Context: {' '.join(retrieved_texts)}\n\n"
+        f"User Query: {query}\n\n"
+        "Task:\n"
             "- Analyze the provided Context to address the User Query effectively."
             "- Use bullet points for clarity if multiple aspects are present."
             "- Ensure if need then combine all given context to answer the User query."
@@ -97,65 +105,145 @@ if query:
             "- If the Context contains no relevant information, respond with: 'Context does not provide sufficient information to answer the question.'\n\n"
             "- Ensure that sentences with the same meaning are not repeated in the response."
             "Note: Ensure that the response is **strictly based on the provided Context** and avoid introducing external information."
+    )
+
+    try:
+        gpt4_response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an intelligent assistant that provides answers based on given context."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature
         )
+        return gpt4_response['choices'][0]['message']['content'], gpt4_response['usage']['total_tokens']
+    except Exception as e:
+        st.error(f"Error generating response with GPT-4: {e}")
+        print(f"Error generating response with GPT-4: {e}")
+        return "No response generated.", 0
+    
+def log_response(query, tokens_used):
+    """
+    Log the query and response details to a file.
+    """
+    with open("gpt_token_log.txt", "a") as log_file:
+        log_file.write(f"{datetime.now()} | Query: {query} | Tokens Used: {tokens_used}\n")
 
-        try:
-                    gpt4_response = openai.ChatCompletion.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": "You are an intelligent assistant that provides answers based on given context."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        max_tokens=max_tokens,
-                        temperature=st.secrets["temperature"]
-                    )
-                    response_text = gpt4_response['choices'][0]['message']['content']
-                    gpt4_token_usage = gpt4_response['usage']['total_tokens']
-                    model_used = "GPT-4o"  # Update model used
 
-                    # Log token usage to file
-                    with open("gpt_token_log.txt", "a") as log_file:
-                        log_file.write(f"{datetime.now()} | Model: GPT-4 | Tokens Used: {gpt4_token_usage}\n")
+def display_documents(retrieved_pdf_title, retrieved_pdf_page, retrieved_pdf_link, Context=""):
+    """
+    Display retrieved documents in a dataframe.
+    """
+    df = pd.DataFrame({
+        "Pdf": retrieved_pdf_title,
+        "Page": retrieved_pdf_page,
+        "Link": retrieved_pdf_link
+    })
+    st.dataframe(
+        df,
+        column_config={
+            "Pdf": "Pdf",
+            "Page": "Page",
+            "Link": st.column_config.LinkColumn("Link"),
+        },
+        hide_index=True,
+    )
+    st.write(Context)
 
-                    print(f"GPT-4 response: {response_text}")  # Debug print
-                    print(f"GPT-4 token usage: {gpt4_token_usage}")  # Debug print
-                    
-        except Exception as e:
-                    st.error(f"Error generating response with GPT-4: {e}")
-                    print(f"Error generating response with GPT-4: {e}")  # Debug print
-                    response_text = "No response generated."
+def handle_feedback(feedback, query):
+    """
+    Handle feedback and log it.
+    """
+    print(f"Handling feedback: {feedback}, query: {query}")  # Debug print
+    try:
+        with open("feedback_log.txt", "a") as feedback_log:
+            feedback_log.write(
+                f"{datetime.now()} | Query: {query} | Feedback: {feedback} \n"
+            )
+        print("Feedback successfully written to file")  # Debug print
+        #st.write("Thank you for your feedback!")
+    except Exception as e:
+        st.error(f"Error writing feedback to file: {e}")
+        print(f"Error writing feedback to file: {e}")  # Debug print
+    st.session_state["feedback_submitted"] = False  # Reset feedback submission status
 
-        # Display the response in the Streamlit app
-        if response_text:
-                st.write(response_text)
-                # Feedback code
-                st.write("Was this response helpful?")
+# ------------------- Main App Logic -------------------
+
+# Load configuration
+#config = load_config("config.json")
+
+# Initialize APIs and models
+pc = Pinecone(api_key=st.secrets["pinecone"]["api_key"])
+index = pc.Index("intelligent-search-v2")
+openai.api_key = st.secrets["openai_key"]
+model = SentenceTransformer(st.secrets["sentence_transformer"]["model"])
+
+# Streamlit UI setup
+st.title(":blue[Chatbot with Pinecone and GPT]")
+initialize_session_state()
+#clear_text_area()
+
+# Query input and submission buttons
+query_input = st.text_area("Enter your query:", value=st.session_state["query_input"], key="query_input")
+
+if 'submit_clicked' not in st.session_state:
+    st.session_state.submit_clicked = False
+
+#for ensure when submit button clicked then all app state reset to Empty state
+def on_button_click():
+    submit_text()
+    st.session_state.submit_clicked = True
+
+# Create two columns
+col1,col2,col3,col4 = st.columns(4)
+# Place buttons in each column
+with col1:
+    clear_button = st.button("Clear Query", on_click=clear_text_area, key="clear_query")
+with col4:
+    st.button("Submit Query", on_click=on_button_click)
+
+if st.session_state.submit_clicked:
+        st.session_state.query = query_input
+        if st.session_state.query is not None:
+            if st.session_state.feedback is None:
+                query = st.session_state.query
+                print(f"Query: {query}")  # Debug print
+
+                embedding1 = model.encode(query)
+                answer = search_pinecone(index, embedding1)
+
+                st.session_state.retrieved_texts = [match['metadata']['text'] for match in answer['matches']]
+                st.session_state.retrieved_pdf_title = [match['metadata']['title'] for match in answer['matches']]
+                st.session_state.retrieved_pdf_page = [match['metadata']['page_number'] for match in answer['matches']]
+                st.session_state.retrieved_pdf_link = [match['metadata']['link'] for match in answer['matches']]
+            
+            if st.session_state.retrieved_texts is not None:
+                if st.session_state.response is None:
+                    response_text, tokens_used = get_gpt4_response(st.session_state["retrieved_texts"], query, max_tokens=300, temperature=st.secrets["temperature"])
+                    st.session_state.response = response_text
+                    log_response(query, tokens_used)
+                    st.write(st.session_state.response)
+                else:
+                    response_text=st.session_state["response"]
+                    if response_text:
+                        st.session_state.response = response_text
+                        st.write(st.session_state.response)
+
+                # Feedback code 
+                #st.subheader("Feed Back:")
+                st.info('Was this answer helpful to you?')
                 sentiment_mapping = [":material/thumb_down:", ":material/thumb_up:"]
-                selected = st.feedback("thumbs")
-                if selected is not None:
-                    with open(st.secrets["feedback_log_file"], "a") as feedback_log:
-                        feedback_log.write(f"{datetime.now()} | Query: {query} | Feedback: {selected} | Model used: {model_used}\n")
-        else:
-            st.write("No response generated.")
+                st.session_state.feedback = st.feedback("thumbs")
+                handle_feedback(st.session_state.feedback,st.session_state.query)
 
-        #Display the retrieved texts for reference
-        st.write("YOU CAN REFER TO THESE DOCUMENTS:")
-        df=pd.DataFrame()
-        df['Pdf']=retrieved_pdf_title
-        df['Page']=retrieved_pdf_page
-        df['Link']=retrieved_pdf_link
-        st.dataframe(
-            df,
-            column_config={
-                "Pdf": "Pdf",
-                "Page": "Page",
-                "Link": st.column_config.LinkColumn("Link"),
-                
-            },
-            hide_index=True,
-        )
-        st.write(retrieved_texts)         
-    else:
-        print("No relevant texts found.")  # Debug print
-        st.write("Pincone have no relevent context")
+                st.subheader("YOU CAN REFER TO THESE DOCUMENTS:")
+                display_documents(st.session_state.retrieved_pdf_title, st.session_state.retrieved_pdf_page, st.session_state.retrieved_pdf_link)
+    
+            else:
+                st.write("Pinecone has no relevant context.")
+        
+        else:
+            st.warning('Enter the Query', icon="⚠️")
+
 
